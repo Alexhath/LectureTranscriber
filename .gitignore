@@ -1,4 +1,5 @@
 .venv/
 __pycache__/
-*_audio.wav
-*_transcript.txt
+*.wav
+*.mp3
+*.txt

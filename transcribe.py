@@ -9,8 +9,10 @@ Usage:
 
 import argparse
 import json
+import shutil
 import sys
 import time
+import tempfile
 from pathlib import Path
 from datetime import timedelta
 
@@ -68,6 +70,43 @@ def extract_audio(video_path: Path, audio_path: Path):
 # TRANSCRIPTION
 # ──────────────────────────────────────────────
 
+def split_audio_in_two_chunks(audio_path: Path):
+    import ffmpeg
+
+    probe_info = ffmpeg.probe(str(audio_path))
+    duration_str = probe_info.get("format", {}).get("duration")
+    if duration_str is None:
+        return [(audio_path, 0.0)], None
+
+    duration = float(duration_str)
+    if duration <= 1.0:
+        return [(audio_path, 0.0)], None
+
+    midpoint = duration / 2.0
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="transcribe_chunks_"))
+    chunk_1 = temp_dir / "chunk_1.wav"
+    chunk_2 = temp_dir / "chunk_2.wav"
+
+    (
+        ffmpeg
+        .input(str(audio_path), ss=0, t=midpoint)
+        .output(str(chunk_1), format="wav", acodec="pcm_s16le", ac=1, ar="16000")
+        .overwrite_output()
+        .run(quiet=True)
+    )
+
+    (
+        ffmpeg
+        .input(str(audio_path), ss=midpoint)
+        .output(str(chunk_2), format="wav", acodec="pcm_s16le", ac=1, ar="16000")
+        .overwrite_output()
+        .run(quiet=True)
+    )
+
+    return [(chunk_1, 0.0), (chunk_2, midpoint)], temp_dir
+
+
 def transcribe(audio_path, model_name="base", language="en", task="transcribe", initial_prompt=None):
     import whisper
 
@@ -86,11 +125,24 @@ def transcribe(audio_path, model_name="base", language="en", task="transcribe", 
     if initial_prompt:
         options["initial_prompt"] = initial_prompt
 
-    result = model.transcribe(str(audio_path), **options)
+    chunks, chunk_temp_dir = split_audio_in_two_chunks(Path(audio_path))
+    if len(chunks) == 2:
+        print("✂️ Splitting audio into 2 near-equal chunks for transcription")
+
+    try:
+        chunk_results = []
+        for index, (chunk_path, offset) in enumerate(chunks, start=1):
+            if len(chunks) > 1:
+                print(f"📝 Transcribing chunk {index}/{len(chunks)}")
+            chunk_result = model.transcribe(str(chunk_path), **options)
+            chunk_results.append(chunk_result)
+    finally:
+        if chunk_temp_dir is not None:
+            shutil.rmtree(chunk_temp_dir, ignore_errors=True)
 
     print(f"✅ Done in {int(time.time() - start)} seconds")
 
-    return result
+    return chunk_results
 
 
 # ──────────────────────────────────────────────
@@ -129,7 +181,7 @@ def main():
     check_dependencies()
     extract_audio(video_path, audio_path)
 
-    result = transcribe(
+    chunk_results = transcribe(
         audio_path,
         model_name=args.model,
         language=None if args.language == "auto" else args.language,
@@ -137,7 +189,17 @@ def main():
         initial_prompt=args.prompt,
     )
 
-    save_plain_text(result, out_dir / f"{stem}_transcript.txt")
+    if chunk_results:
+        save_plain_text(chunk_results[0], out_dir / "Transcription_Pt1.txt")
+    else:
+        (out_dir / "Transcription_Pt1.txt").write_text("", encoding="utf-8")
+        print(f"📄 Saved → {out_dir / 'Transcription_Pt1.txt'}")
+
+    if len(chunk_results) > 1:
+        save_plain_text(chunk_results[1], out_dir / "Transcription_Pt2.txt")
+    else:
+        (out_dir / "Transcription_Pt2.txt").write_text("", encoding="utf-8")
+        print(f"📄 Saved → {out_dir / 'Transcription_Pt2.txt'}")
 
     if not args.keep_audio:
         audio_path.unlink(missing_ok=True)
