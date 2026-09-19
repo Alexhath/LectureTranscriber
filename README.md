@@ -1,3 +1,7 @@
+# LectureTranscriber
+
+Framework that helps me take notes while watching recorded lessons.
+
 # 🎓 Lecture Transcription & Note Generation Framework
 
 A two-stage pipeline that takes a raw lecture video and produces structured, study-ready notes:
