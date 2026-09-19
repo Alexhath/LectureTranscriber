@@ -1,195 +1,164 @@
 # LectureTranscriber
 
-Framework that helps me take notes while watching recorded lessons.
+LectureTranscriber uses OpenAI Whisper to transcribe recorded lessons. It is designed as the first step in a study workflow:
 
-# 🎓 Lecture Transcription & Note Generation Framework
+1. `transcribe.py` extracts the audio from a video and transcribes it with Whisper.
+2. The transcription is split into two text files so it can be reviewed or supplied to an LLM in manageable parts.
+3. An LLM is used manually to turn the two transcription files into a structured note file.
 
-A two-stage pipeline that takes a raw lecture video and produces structured, study-ready notes:
+The LLM step is intentionally separate from this project. You can use the model and prompt that best fit your workflow.
 
+## Workflow
+
+```text
+lecture.mp4
+    |
+    v
+transcribe.py + Whisper
+    |
+    +--> Transcription_Pt1.txt
+    |
+    +--> Transcription_Pt2.txt
+             |
+             v
+       Manual LLM processing
+             |
+             v
+       structured_notes.md
 ```
-  lecture.mp4
-      │
-      ▼  [Stage 1 — transcribe.py + Whisper]
-  lecture_transcript.txt
-  lecture_timestamped.txt
-      │
-      ▼  [Stage 2 — structure_notes.py + Claude]
-  lecture_notes_deep.md   ← structured study notes
-```
 
----
+## Requirements
 
-## ⚡ Quick Start
+- Python 3.9 or newer
+- `ffmpeg`
+- `openai-whisper`
+- `ffmpeg-python`
+- `PySide6` for the graphical interface
+- PyTorch, installed as part of the Whisper setup
 
-### 1. Install system dependency (ffmpeg)
+Install the Python dependencies with:
 
 ```bash
-# macOS
-brew install ffmpeg
+pip install openai-whisper ffmpeg-python PySide6
+```
 
+Install `ffmpeg` separately if it is not already available:
+
+```bash
 # Ubuntu / Debian
 sudo apt install ffmpeg
 
-# Windows: https://ffmpeg.org/download.html  (add to PATH)
+# macOS
+brew install ffmpeg
 ```
 
-### 2. Install Python packages
+For Windows, install `ffmpeg` and add it to `PATH`.
+
+## Transcribe a Lecture
+
+Run:
 
 ```bash
-pip install -r requirements.txt
+python transcribe.py path/to/lecture.mp4
 ```
 
-### 3. Set your Anthropic API key (for Stage 2)
+The script creates two files in the same directory as the video:
+
+- `Transcription_Pt1.txt`: the first half of the transcription
+- `Transcription_Pt2.txt`: the second half of the transcription
+
+The audio is split into two near-equal chunks before transcription. Temporary audio chunks are removed automatically. The extracted audio is also removed when transcription finishes unless `--keep-audio` is used.
+
+## Options
+
+```text
+--model, -m       Whisper model: tiny, base, small, medium, large, or large-v3
+--language, -l    Language code; defaults to en, or use auto for detection
+--task, -t        transcribe or translate; defaults to transcribe
+--outdir          Directory for the output files
+--prompt, -p      Optional prompt containing domain-specific terminology
+--keep-audio      Keep the extracted WAV audio file
+```
+
+Examples:
 
 ```bash
-export ANTHROPIC_API_KEY='sk-ant-...'
-# Get yours at: https://console.anthropic.com/
+# Use a smaller model for a faster draft
+python transcribe.py lecture.mp4 --model small
+
+# Automatically detect the spoken language
+python transcribe.py lecture.mp4 --language auto
+
+# Save the results to a separate directory
+python transcribe.py lecture.mp4 --outdir ./transcriptions
+
+# Keep the extracted audio file for inspection
+python transcribe.py lecture.mp4 --keep-audio
 ```
 
-### 4. Run the full pipeline in one command
+## Use the Graphical Interface
+
+Launch the GUI from the project directory with:
 
 ```bash
-python transcribe.py lecture.mp4 --notes
+python transcribe_gui.py
 ```
 
-This produces:
-- `lecture_transcript.txt` — verbatim transcript
-- `lecture_timestamped.txt` — transcript with `[HH:MM:SS]` markers
-- `lecture_transcript_notes_deep.md` — structured study notes
-
----
-
-## 📖 Stage 1 — Transcription
-
-```
-python transcribe.py <video.mp4> [options]
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--model` / `-m` | `base` | Whisper model: tiny, base, small, medium, large, large-v3 |
-| `--language` / `-l` | `en` | Language code (`auto` for auto-detect) |
-| `--task` / `-t` | `transcribe` | `transcribe` or `translate` (translate → always English) |
-| `--output` / `-o` | `txt,timestamped` | Output formats: `txt`, `timestamped`, `srt`, `vtt`, `json`, `md`, `all` |
-| `--outdir` | same as video | Save files to a custom directory |
-| `--prompt` / `-p` | — | Domain hint (e.g. `"Machine Learning lecture"`) |
-| `--keep-audio` | false | Keep the extracted `.wav` audio file |
-| `--notes` | false | **Run Stage 2 automatically after transcription** |
-| `--notes-style` | `deep` | Note style for Stage 2 |
-| `--course` / `-c` | — | Course name passed to Stage 2 |
-
-### Examples
+To create an application icon on the Linux desktop, create a launcher file:
 
 ```bash
-# Transcribe only (fast)
-python transcribe.py lecture.mp4
-
-# Full pipeline: transcribe + generate deep notes
-python transcribe.py lecture.mp4 --notes --course "Linear Algebra"
-
-# High accuracy + Cornell-style notes
-python transcribe.py lecture.mp4 --model large-v3 --notes --notes-style cornell --course "Quantum Physics"
-
-# Italian lecture, translated to English, then notes
-python transcribe.py lezione.mp4 --language it --task translate --notes
-
-# Batch transcribe a folder
-python batch_transcribe.py ./lectures/ --model small
+mkdir -p ~/.local/share/applications
+nano ~/.local/share/applications/lecture-transcriber.desktop
 ```
 
----
+Paste the following content into the file. Replace `/path/to/TranscribeLectures` with the absolute path to this repository:
 
-## 📖 Stage 2 — Note Structuring
-
-Can also be run **independently** on any existing `.txt` transcript:
-
+```ini
+[Desktop Entry]
+Type=Application
+Name=LectureTranscriber
+Comment=Transcribe lectures with Whisper
+Exec=/usr/bin/python3 /path/to/TranscribeLectures/transcribe_gui.py
+Path=/path/to/TranscribeLectures
+Terminal=false
+Categories=AudioVideo;Education;
 ```
-python structure_notes.py <transcript.txt> [options]
-```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--style` / `-s` | `deep` | Note-taking style (see table below) |
-| `--course` / `-c` | — | Course name / subject hint |
-| `--timestamped` / `-ts` | — | Path to `_timestamped.txt` (adds `[HH:MM:SS]` refs to notes) |
-| `--outdir` | same as transcript | Output directory |
-| `--output-name` | `<stem>_notes_<style>` | Custom output filename |
-
-### Examples
+Make the launcher executable:
 
 ```bash
-# Basic
-python structure_notes.py lecture_transcript.txt
-
-# Cornell style with timestamp cross-references
-python structure_notes.py lecture_transcript.txt \
-  --style cornell \
-  --course "Algorithms & Data Structures" \
-  --timestamped lecture_timestamped.txt
-
-# Flashcards for exam prep
-python structure_notes.py lecture_transcript.txt --style flashcard
-
-# Mind map for Obsidian/Notion
-python structure_notes.py lecture_transcript.txt --style mindmap-md --course "Neuroscience"
+chmod +x ~/.local/share/applications/lecture-transcriber.desktop
 ```
 
----
+The application should then appear in the desktop application menu. You can right-click it and choose **Add to Desktop** or **Add to Favorites**, depending on your desktop environment.
 
-## 🎨 Note Styles
+If Python or the project dependencies are installed inside a virtual environment, use that environment's Python executable in `Exec`, for example:
 
-| Style | Best for | Produces |
-|-------|----------|---------|
-| `deep` | Primary study reference | Overview · Key Concepts · Formulas · Examples · Pitfalls · Insights · Summary · Review Questions |
-| `cornell` | Active recall while rewatching | Main Notes · Cue Questions · Summary (classic Cornell layout) |
-| `outline` | Quick reference / overview | Clean H2/H3/H4 hierarchy · Key Takeaways |
-| `mindmap-md` | Visual thinkers, Obsidian | Nested bullet mind map · Glossary |
-| `flashcard` | Exam preparation | Q&A pairs grouped by topic · Summary |
-
-> You can fully customize any style by editing `prompts.py` — each style is a plain string in the `STYLES` dict.
-
----
-
-## 🤖 Whisper Model Comparison
-
-| Model    | Size   | Speed      | Accuracy  | Recommended for |
-|----------|--------|------------|-----------|-----------------|
-| tiny     | 75 MB  | ⚡⚡⚡⚡⚡  | ⭐⭐      | Quick drafts    |
-| base     | 145 MB | ⚡⚡⚡⚡    | ⭐⭐⭐    | Default         |
-| small    | 465 MB | ⚡⚡⚡      | ⭐⭐⭐⭐  | CPU recommended |
-| medium   | 1.5 GB | ⚡⚡        | ⭐⭐⭐⭐⭐| GPU recommended |
-| large-v3 | 3.1 GB | ⚡          | ⭐⭐⭐⭐⭐| Best quality    |
-
----
-
-## 📁 Output Files Reference
-
-| File | Content |
-|------|---------|
-| `*_transcript.txt` | Clean word-for-word transcript |
-| `*_timestamped.txt` | Transcript with `[HH:MM:SS]` per segment |
-| `*.srt` | SubRip subtitles (VLC, video editors) |
-| `*.vtt` | WebVTT subtitles (web players) |
-| `*_transcript.md` | Markdown transcript grouped in 5-min blocks |
-| `*_transcript.json` | Full Whisper output (word-level timestamps) |
-| `*_notes_<style>.md` | **Structured study notes** (Stage 2 output) |
-
----
-
-## 💡 Tips
-
-- Pass `--prompt "Machine Learning, gradient descent"` to improve terminology recognition in Stage 1
-- Use `--timestamped` in Stage 2 to get `[HH:MM:SS]` links in your notes — great for jumping back to the video while studying
-- Long lectures (>1 hour) are automatically split into chunks and merged — no extra configuration needed
-- Edit `prompts.py` to fully customize the LLM's behavior, output sections, and formatting style
-
----
-
-## 🔧 Requirements
-
+```ini
+Exec=/path/to/TranscribeLectures/.venv/bin/python /path/to/TranscribeLectures/transcribe_gui.py
 ```
-openai-whisper
-ffmpeg-python
-torch
-anthropic
-```
+
+## Create Structured Notes
+
+After transcription, provide both text files to an LLM manually. A useful prompt should ask the LLM to:
+
+- combine both parts into one coherent lecture
+- preserve important definitions, explanations, examples, and formulas
+- remove repetition and transcription noise
+- organize the result with clear headings and subheadings
+- identify questions or concepts that need further review
+- save the result as a Markdown file
+
+The resulting note file is created by your LLM workflow and is not generated automatically by `transcribe.py`.
+
+## Whisper Models
+
+| Model | Approximate size | Typical use |
+| --- | ---: | --- |
+| `tiny` | 75 MB | Fast drafts |
+| `base` | 145 MB | Default starting point |
+| `small` | 465 MB | Better accuracy on CPU |
+| `medium` | 1.5 GB | Higher accuracy with a capable GPU |
+| `large-v3` | 3.1 GB | Best accuracy, highest resource use |
+
+The model is downloaded by Whisper on first use. Model files are kept in Whisper's cache and should not be committed to this repository.
